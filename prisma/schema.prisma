@@ -1,0 +1,66 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model MenuItem {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  price       Decimal   @db.Decimal(10, 2)
+  imageUrl    String?
+  category    String?
+  isAvailable Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  OrderItems  OrderItem[]
+}
+
+model Order {
+  id            String      @id @default(uuid())
+  customerName  String
+  customerEmail String
+  customerPhone String?
+  totalAmount   Decimal     @db.Decimal(10, 2)
+  status        OrderStatus @default(PENDING)
+  orderType     OrderType
+  pickupTime    DateTime?
+  deliveryAddress String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  OrderItems    OrderItem[]
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  menuItemId String
+  quantity   Int
+  price      Decimal  @db.Decimal(10, 2) // Price at the time of order
+  order      Order    @relation(fields: [orderId], references: [id])
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@unique([orderId, menuItemId])
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum OrderType {
+  PICKUP
+  DELIVERY
+}
