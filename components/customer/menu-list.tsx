@@ -48,6 +48,10 @@ export function MenuList({ initialMenuItems }: MenuListProps) {
           cartItem.item.id === item.id ? { ...cartItem, quantity: cartItem.quantity + 1 } : cartItem,
         )
       } else {
+        // If cart was empty, open the sheet
+        if (prevCart.length === 0) {
+          setIsCartOpen(true)
+        }
         return [...prevCart, { item, quantity: 1 }]
       }
     })
