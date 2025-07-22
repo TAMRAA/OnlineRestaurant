@@ -1,67 +1,30 @@
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import type { MenuItem } from "@/lib/types"
-
-// Mock Prisma client for demonstration
-const prisma = {
-  menuItem: {
-    findMany: async () => {
-      console.log("Mock: Fetching all menu items from DB")
-      return [
-        {
-          id: "1",
-          name: "Margherita Pizza",
-          description: "Classic pizza with tomato, mozzarella, and basil.",
-          price: 12.99,
-          imageUrl: "/placeholder.svg?height=200&width=200",
-          category: "Pizza",
-          isAvailable: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: "2",
-          name: "Pepperoni Pizza",
-          description: "Pizza with spicy pepperoni and extra cheese.",
-          price: 14.5,
-          imageUrl: "/placeholder.svg?height=200&width=200",
-          category: "Pizza",
-          isAvailable: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ]
-    },
-    create: async (data: { data: Omit<MenuItem, "id" | "createdAt" | "updatedAt"> }) => {
-      console.log("Mock: Creating menu item in DB", data.data)
-      return {
-        id: `mock-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ...data.data,
-      }
-    },
-    update: async (params: { where: { id: string }; data: Partial<MenuItem> }) => {
-      console.log("Mock: Updating menu item in DB", params.where.id, params.data)
-      return { id: params.where.id, updatedAt: new Date().toISOString(), ...params.data }
-    },
-    delete: async (params: { where: { id: string } }) => {
-      console.log("Mock: Deleting menu item from DB", params.where.id)
-      return { id: params.where.id }
-    },
-  },
-}
+import { createServerClient } from "@/lib/supabase" // Import server-side Supabase client
 
 export async function GET() {
-  // Clerk authentication check (Server-side)
   const { userId } = auth()
-
   if (!userId) {
     return new NextResponse("Unauthorized", { status: 401 })
   }
 
   try {
-    const menuItems = await prisma.menuItem.findMany()
+    const supabase = createServerClient() // Use server-side client
+    const { data, error } = await supabase.from("MenuItem").select("*").order("createdAt", { ascending: false })
+
+    if (error) {
+      console.error("Supabase error fetching menu items:", error)
+      return NextResponse.json({ error: "Failed to fetch menu items" }, { status: 500 })
+    }
+
+    // Map Supabase data to your MenuItem type, handling Decimal for price
+    const menuItems: MenuItem[] = data.map((item: any) => ({
+      ...item,
+      price: Number.parseFloat(item.price), // Convert Decimal to number
+      isAvailable: item.isAvailable, // Ensure boolean type
+    }))
+
     return NextResponse.json(menuItems)
   } catch (error) {
     console.error("Error fetching menu items:", error)
@@ -76,8 +39,22 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json()
-    const newMenuItem = await prisma.menuItem.create({ data: body })
+    const body: Omit<MenuItem, "id" | "createdAt" | "updatedAt"> = await req.json()
+    const supabase = createServerClient() // Use server-side client
+
+    const { data, error } = await supabase.from("MenuItem").insert([body]).select().single()
+
+    if (error) {
+      console.error("Supabase error creating menu item:", error)
+      return NextResponse.json({ error: "Failed to create menu item" }, { status: 500 })
+    }
+
+    const newMenuItem: MenuItem = {
+      ...data,
+      price: Number.parseFloat(data.price),
+      isAvailable: data.isAvailable,
+    }
+
     return NextResponse.json(newMenuItem, { status: 201 })
   } catch (error) {
     console.error("Error creating menu item:", error)
@@ -92,12 +69,28 @@ export async function PUT(req: Request) {
   }
 
   try {
-    const body = await req.json()
-    const { id, ...data } = body
+    const body: Partial<MenuItem> & { id: string } = await req.json()
+    const { id, ...dataToUpdate } = body
+
     if (!id) {
       return NextResponse.json({ error: "Menu item ID is required for update" }, { status: 400 })
     }
-    const updatedMenuItem = await prisma.menuItem.update({ where: { id }, data })
+
+    const supabase = createServerClient() // Use server-side client
+
+    const { data, error } = await supabase.from("MenuItem").update(dataToUpdate).eq("id", id).select().single()
+
+    if (error) {
+      console.error("Supabase error updating menu item:", error)
+      return NextResponse.json({ error: "Failed to update menu item" }, { status: 500 })
+    }
+
+    const updatedMenuItem: MenuItem = {
+      ...data,
+      price: Number.parseFloat(data.price),
+      isAvailable: data.isAvailable,
+    }
+
     return NextResponse.json(updatedMenuItem)
   } catch (error) {
     console.error("Error updating menu item:", error)
@@ -114,10 +107,20 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
+
     if (!id) {
       return NextResponse.json({ error: "Menu item ID is required for deletion" }, { status: 400 })
     }
-    await prisma.menuItem.delete({ where: { id } })
+
+    const supabase = createServerClient() // Use server-side client
+
+    const { error } = await supabase.from("MenuItem").delete().eq("id", id)
+
+    if (error) {
+      console.error("Supabase error deleting menu item:", error)
+      return NextResponse.json({ error: "Failed to delete menu item" }, { status: 500 })
+    }
+
     return NextResponse.json({ message: "Menu item deleted successfully" })
   } catch (error) {
     console.error("Error deleting menu item:", error)

@@ -1,28 +1,15 @@
 import { NextResponse } from "next/server"
 import type { MenuItem } from "@/lib/types"
+import { createServerClient } from "@/lib/supabase" // Import server-side Supabase client
 
-// Mock Prisma client for demonstration
-const prisma = {
-  order: {
-    create: async (data: any) => {
-      console.log("Mock: Creating order in DB", data)
-      return { id: "mock-order-123", ...data }
-    },
-  },
-  orderItem: {
-    createMany: async (data: any) => {
-      console.log("Mock: Creating order items in DB", data)
-      return { count: data.data.length }
-    },
-  },
-}
-
-// Mock Stripe for demonstration
+// Mock Stripe for demonstration (replace with actual Stripe integration later)
 const stripe = {
   checkout: {
     sessions: {
       create: async (params: any) => {
         console.log("Mock: Creating Stripe checkout session", params)
+        // In a real app, you'd use your actual Stripe secret key and configure line_items
+        // For now, return a placeholder URL
         return { url: "https://mock-stripe-checkout.com/session_id_123" }
       },
     },
@@ -38,9 +25,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Cart is empty" }, { status: 400 })
     }
 
-    // 1. Create Order in Database (using Prisma)
-    const newOrder = await prisma.order.create({
-      data: {
+    const supabase = createServerClient() // Use server-side client
+
+    // 1. Create Order in Database
+    const { data: newOrder, error: orderError } = await supabase
+      .from("Order")
+      .insert({
         customerName: customerDetails.name,
         customerEmail: customerDetails.email,
         customerPhone: customerDetails.phone,
@@ -49,8 +39,14 @@ export async function POST(req: Request) {
         orderType: orderType.toUpperCase(),
         deliveryAddress: orderType === "delivery" ? customerDetails.address : null,
         // pickupTime: new Date().toISOString(), // You might want to add a selection for this
-      },
-    })
+      })
+      .select()
+      .single()
+
+    if (orderError || !newOrder) {
+      console.error("Supabase error creating order:", orderError)
+      return NextResponse.json({ error: "Failed to create order" }, { status: 500 })
+    }
 
     // 2. Create Order Items
     const orderItemsData = cart.map((item: { item: MenuItem; quantity: number }) => ({
@@ -60,12 +56,16 @@ export async function POST(req: Request) {
       price: item.item.price, // Store price at time of order
     }))
 
-    await prisma.orderItem.createMany({
-      data: orderItemsData,
-    })
+    const { error: orderItemsError } = await supabase.from("OrderItem").insert(orderItemsData)
 
-    // 3. Create Stripe Checkout Session
-    // In a real app, you'd use your actual Stripe secret key and configure line_items
+    if (orderItemsError) {
+      console.error("Supabase error creating order items:", orderItemsError)
+      // Consider rolling back the order if order items fail
+      return NextResponse.json({ error: "Failed to create order items" }, { status: 500 })
+    }
+
+    // 3. Create Stripe Checkout Session (Mocked for now)
+    // In a real app, you'd uncomment and use your actual Stripe integration here.
     // const stripeSession = await stripe.checkout.sessions.create({
     //   payment_method_types: ['card'],
     //   line_items: cart.map((item: { item: MenuItem; quantity: number }) => ({
@@ -80,8 +80,8 @@ export async function POST(req: Request) {
     //     quantity: item.quantity,
     //   })),
     //   mode: 'payment',
-    //   success_url: `${headers().get('origin')}/order-success?order_id=${newOrder.id}`,
-    //   cancel_url: `${headers().get('origin')}/cart`,
+    //   success_url: `${req.headers.get('origin')}/order-success?order_id=${newOrder.id}`,
+    //   cancel_url: `${req.headers.get('origin')}/cart`,
     //   metadata: {
     //     orderId: newOrder.id,
     //   },

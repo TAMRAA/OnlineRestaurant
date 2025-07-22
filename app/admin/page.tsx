@@ -1,100 +1,42 @@
 import { auth } from "@clerk/nextjs/server"
+import { currentUser } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 import type { MenuItem } from "@/lib/types"
 import { AdminMenuTable } from "@/components/admin/admin-menu-table"
 import { Suspense } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 
-// This function will fetch menu items for the admin dashboard.
+// This function will fetch menu items for the admin dashboard from your API route.
 async function getMenuItemsForAdmin(): Promise<MenuItem[]> {
-  // In a real application, you would fetch from your Next.js API route:
-  // const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/admin/menu-items`, {
-  //   cache: 'no-store', // Always fetch fresh data for admin
-  // });
-  // if (!res.ok) {
-  //   throw new Error('Failed to fetch menu items for admin');
-  // }
-  // return res.json();
-
-  // Mock data for demonstration
-  await new Promise((resolve) => setTimeout(resolve, 1500)) // Simulate network delay
-  return [
-    {
-      id: "1",
-      name: "Margherita Pizza",
-      description: "Classic pizza with tomato, mozzarella, and basil.",
-      price: 12.99,
-      imageUrl: "/placeholder.svg?height=200&width=200",
-      category: "Pizza",
-      isAvailable: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "2",
-      name: "Pepperoni Pizza",
-      description: "Pizza with spicy pepperoni and extra cheese.",
-      price: 14.5,
-      imageUrl: "/placeholder.svg?height=200&width=200",
-      category: "Pizza",
-      isAvailable: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "3",
-      name: "Caesar Salad",
-      description: "Fresh romaine lettuce, croutons, parmesan, and Caesar dressing.",
-      price: 8.75,
-      imageUrl: "/placeholder.svg?height=200&width=200",
-      category: "Salad",
-      isAvailable: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "4",
-      name: "Coca-Cola",
-      description: "Refreshing soft drink.",
-      price: 2.5,
-      imageUrl: "/placeholder.svg?height=200&width=200",
-      category: "Drinks",
-      isAvailable: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "5",
-      name: "Cheeseburger",
-      description: "Juicy beef patty with cheese, lettuce, tomato, and pickles.",
-      price: 10.99,
-      imageUrl: "/placeholder.svg?height=200&width=200",
-      category: "Burgers",
-      isAvailable: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "6",
-      name: "French Fries",
-      description: "Crispy golden fries.",
-      price: 3.5,
-      imageUrl: "/placeholder.svg?height=200&width=200",
-      category: "Sides",
-      isAvailable: false, // Example of an unavailable item
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ]
+  // Ensure NEXT_PUBLIC_APP_URL is set in your environment variables for Vercel deployments
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+  const res = await fetch(`${appUrl}/api/admin/menu-items`, {
+    cache: "no-store", // Always fetch fresh data for admin
+  })
+  if (!res.ok) {
+    // It's good practice to log the error response from the API
+    const errorData = await res.json()
+    console.error("Failed to fetch menu items for admin:", errorData)
+    throw new Error("Failed to fetch menu items for admin")
+  }
+  return res.json()
 }
 
 export default async function AdminPage() {
   // Clerk authentication check (Server-side)
   const { userId } = auth()
 
-  if (!userId) {
-    // Redirect unauthenticated users to the sign-in page
-    redirect("/sign-in") // Assuming you have a /sign-in route configured with Clerk
+  const user = await currentUser() // Fetch the current user details
+
+  // Define your admin email(s) - must match the list in middleware.ts or come from a shared config
+  // In a real product, consider managing roles in your database or via Clerk's metadata/organizations.
+  const ADMIN_EMAILS = ["admin@example.com", "your.admin.email@example.com"]
+
+  const userEmail = user?.emailAddresses?.[0]?.emailAddress
+
+  if (!userId || !userEmail || !ADMIN_EMAILS.includes(userEmail)) {
+    // Redirect unauthenticated or unauthorized users
+    redirect("/") // Redirect to home page or a specific unauthorized page
   }
 
   const menuItems = await getMenuItemsForAdmin()
